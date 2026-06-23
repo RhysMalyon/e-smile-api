@@ -2,10 +2,11 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
+from typing import AsyncGenerator, cast
 
 import aiomysql
 
-from .config import Settings
+from .config import Settings, settings
 
 logger = logging.getLogger(__name__)
 
@@ -44,13 +45,15 @@ class DatabaseService:
                     raise
 
     @asynccontextmanager
-    async def transaction(self):
+    async def transaction(self) -> AsyncGenerator[aiomysql.Connection, None]:
         existing_conn = db_connection_ctx.get()
 
         if existing_conn is not None:
             raise RuntimeError("Connection already present in context")
 
         async with self.pool.acquire() as conn:
+            conn = cast(aiomysql.Connection, conn)
+
             token = db_connection_ctx.set(conn)
 
             try:
@@ -74,3 +77,6 @@ class DatabaseService:
             await self.pool.wait_closed()
             self.pool = None
             logger.info("DB connection pool closed.")
+
+
+db_service = DatabaseService(settings=settings.db)
