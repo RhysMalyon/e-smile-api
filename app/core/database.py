@@ -6,7 +6,7 @@ from typing import AsyncGenerator, cast
 
 import aiomysql
 
-from .config import Settings, settings
+from .config import DbSettings, settings
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ db_connection_ctx: ContextVar[aiomysql.Connection | None] = ContextVar(
 
 
 class DatabaseService:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: DbSettings):
         self.config = settings
         self.pool: aiomysql.Pool | None = None
         self._lock = asyncio.Lock()
@@ -24,7 +24,7 @@ class DatabaseService:
     async def create_pool(self):
         async with self._lock:
             if not self.pool:
-                settings = self.config.db
+                settings = self.config
 
                 try:
                     self.pool = await aiomysql.create_pool(
