@@ -138,3 +138,5 @@ Thumbs.db
 .env.*.local
 *.db
 *.sqlite
+
+*.sql
