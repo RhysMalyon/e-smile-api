@@ -3,6 +3,8 @@ from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.permissions import ROLE_PERMISSIONS, Permission, Role
+
 
 class AppSettings(BaseModel):
     host: str
@@ -10,6 +12,10 @@ class AppSettings(BaseModel):
     title: str
     version: str
     debug: bool = False
+
+
+class AuthSettings(BaseModel):
+    roles: dict[Role, set[Permission]] = ROLE_PERMISSIONS
 
 
 class CorsSettings(BaseModel):
@@ -56,6 +62,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_nested_delimiter="__")
 
     app: AppSettings
+    auth: AuthSettings = Field(default_factory=AuthSettings)
     cors: CorsSettings
     db: DbSettings
     jwt: JwtSettings
