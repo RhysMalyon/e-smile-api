@@ -40,9 +40,9 @@ class DbSettings(BaseModel):
 class JwtSettings(BaseModel):
     public_key: str
     private_key: str
-    private_key_passphrase: str
     access_token_secret: str
     refresh_token_secret: str
+    refresh_token_expire_seconds: int = 2592000
 
     @field_validator("public_key", "private_key", mode="before")
     @classmethod
