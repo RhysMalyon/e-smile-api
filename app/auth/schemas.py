@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr
@@ -33,3 +34,25 @@ class JWTPayload(BaseModel):
     role: Role
     exp: int
     iat: int
+
+
+class User(BaseModel):
+    id: int
+    email: EmailStr
+    role: Role
+    is_blocked: bool
+    created_at: datetime
+    last_accessed: datetime | None
+
+
+class InsertTokenPayload(BaseModel):
+    token_hash: str
+    session_id: str
+    user_id: int
+    expires_at: datetime
+
+
+class RefreshTokenPayload(BaseModel):
+    user_id: int
+    session_id: str
+    is_rotated: bool
