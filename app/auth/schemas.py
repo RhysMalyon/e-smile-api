@@ -55,4 +55,4 @@ class InsertTokenPayload(BaseModel):
 class RefreshTokenPayload(BaseModel):
     user_id: int
     session_id: str
-    is_rotated: bool
+    is_valid: bool
