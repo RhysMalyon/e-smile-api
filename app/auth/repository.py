@@ -5,7 +5,7 @@ from aiomysql import Connection
 from pypika import functions as fn, FormatParameter, Table
 from pypika.dialects import MySQLQuery
 
-from app.auth.schemas import InsertTokenPayload, RefreshTokenPayload, User
+from app.auth.schemas import InsertTokenPayload, RefreshTokenPayload, User, UserCredentials
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,27 @@ async def find_user_by_email(conn: Connection, email: str) -> User:
             raise UserNotFoundError("Could not find user.")
 
         return User(**result)
+
+
+async def find_user_credentials_by_email(conn: Connection, email: str) -> UserCredentials:
+    async with conn.cursor(aiomysql.DictCursor) as cur:
+        query = (
+            MySQLQuery.from_(users_table)
+            .select(users_table.id, users_table.role, users_table.password)
+            .where(users_table.email == FormatParameter())
+        )
+
+        sql_string = query.get_sql()
+
+        logger.info(sql_string)
+
+        await cur.execute(sql_string, (email,))
+        result = await cur.fetchone()
+
+        if result is None:
+            raise UserNotFoundError("Could not find user.")
+
+        return UserCredentials(**result)
 
 
 async def update_last_accessed(conn: Connection, user_id: int) -> None:

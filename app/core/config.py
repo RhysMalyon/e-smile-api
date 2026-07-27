@@ -41,6 +41,7 @@ class JwtSettings(BaseModel):
     public_key: str
     private_key: str
     access_token_secret: str
+    access_token_lifetime_seconds: int = 900
     refresh_token_secret: str
     refresh_token_expire_seconds: int = 2592000
 

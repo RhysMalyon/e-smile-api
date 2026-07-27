@@ -45,6 +45,12 @@ class User(BaseModel):
     last_accessed: datetime | None
 
 
+class UserCredentials(BaseModel):
+    id: int
+    role: Role
+    password: str
+
+
 class InsertTokenPayload(BaseModel):
     token_hash: str
     session_id: str
