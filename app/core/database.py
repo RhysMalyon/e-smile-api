@@ -73,7 +73,7 @@ class DatabaseService:
 
     async def close(self):
         if self.pool is not None:
-            await self.pool.close()
+            self.pool.close()
             await self.pool.wait_closed()
             self.pool = None
             logger.info("DB connection pool closed.")
