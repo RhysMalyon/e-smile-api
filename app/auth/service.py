@@ -52,7 +52,7 @@ async def login(conn: Connection, email: str, password: str) -> LoginResponse:
     # Access token
     access_token_expires_at = now + timedelta(seconds=settings.jwt.access_token_lifetime_seconds)
     payload = JWTPayload(
-        sub=user.id,
+        sub=str(user.id),
         role=user.role,
         exp=int(access_token_expires_at.timestamp()),
         iat=int(now.timestamp()),
