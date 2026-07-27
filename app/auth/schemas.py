@@ -51,6 +51,12 @@ class UserCredentials(BaseModel):
     password: str
 
 
+class UserPayload(BaseModel):
+    email: EmailStr
+    password: str
+    role: Role
+
+
 class InsertTokenPayload(BaseModel):
     token_hash: str
     session_id: str
