@@ -5,12 +5,18 @@ from datetime import UTC, datetime, timedelta
 from aiomysql import Connection
 
 from app.auth.repository import (
+    RefreshTokenNotFoundError,
     UserNotFoundError,
+    find_hashed_refresh_token,
+    find_user_by_id,
     find_user_credentials_by_email,
     insert_refresh_token,
+    invalidate_refresh_token,
+    invalidate_session_tokens,
+    invalidate_user_tokens,
     update_last_accessed,
 )
-from app.auth.schemas import InsertTokenPayload, JWTPayload, LoginResponse
+from app.auth.schemas import InsertTokenPayload, JWTPayload, LoginResponse, TokenPair
 from app.auth.security import (
     create_access_token,
     generate_refresh_token,
@@ -28,7 +34,7 @@ invalid_hashed_password = hash_password(invalid_plain_password)
 
 
 class InvalidCredentialsError(Exception):
-    pass
+    status_code = 401
 
 
 async def login(conn: Connection, email: str, password: str) -> LoginResponse:
@@ -78,3 +84,64 @@ async def login(conn: Connection, email: str, password: str) -> LoginResponse:
     await update_last_accessed(conn, user_id=user.id)
 
     return LoginResponse(access_token=access_token, role=user.role)
+
+
+class InvalidRefreshTokenError(Exception):
+    status_code = 401
+
+
+async def refresh(conn: Connection, refresh_token_hash: str) -> TokenPair:
+    try:
+        db_token = await find_hashed_refresh_token(conn, refresh_token_hash)
+    except RefreshTokenNotFoundError:
+        logger.warning("Refresh token not found.")
+        raise InvalidRefreshTokenError("Invalid refresh token.") from None
+
+    if not db_token.is_valid:
+        await invalidate_session_tokens(conn, session_id=db_token.session_id)
+
+        logger.warning("Refresh token already invalidated.")
+        raise InvalidRefreshTokenError("Invalid refresh token.")
+
+    try:
+        user = await find_user_by_id(conn, user_id=db_token.user_id)
+    except UserNotFoundError:
+        logger.warning("User not found.")
+        raise InvalidRefreshTokenError("Invalid refresh token.") from None
+
+    if user.is_blocked:
+        await invalidate_user_tokens(conn, user_id=db_token.user_id)
+
+        logger.warning("User blocked.")
+        raise InvalidRefreshTokenError("Invalid refresh token.")
+
+    now = datetime.now(UTC)
+
+    # Access token
+    access_token_expires_at = now + timedelta(seconds=settings.jwt.access_token_lifetime_seconds)
+    payload = JWTPayload(
+        sub=str(user.id),
+        role=user.role,
+        exp=int(access_token_expires_at.timestamp()),
+        iat=int(now.timestamp()),
+    )
+    access_token = create_access_token(payload, settings.jwt.private_key)
+
+    # Refresh token
+    raw_refresh_token = generate_refresh_token()
+    token_hash = hash_token(raw_token=raw_refresh_token)
+    refresh_token_expires_at = now + timedelta(seconds=settings.jwt.refresh_token_expire_seconds)
+
+    await invalidate_refresh_token(conn, refresh_token_hash)
+
+    await insert_refresh_token(
+        conn,
+        InsertTokenPayload(
+            token_hash=token_hash,
+            session_id=db_token.session_id,
+            user_id=db_token.user_id,
+            expires_at=refresh_token_expires_at,
+        ),
+    )
+
+    return TokenPair(access_token=access_token, refresh_token=raw_refresh_token)

@@ -12,6 +12,7 @@ from app.auth.schemas import (
     User,
     UserCredentials,
     UserPayload,
+    UserStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,27 @@ async def find_user_by_email(conn: Connection, email: str) -> User:
             raise UserNotFoundError("Could not find user.")
 
         return User(**result)
+
+
+async def find_user_by_id(conn: Connection, user_id: int) -> UserStatus:
+    async with conn.cursor(aiomysql.DictCursor) as cur:
+        query = (
+            MySQLQuery.from_(users_table)
+            .select(users_table.id, users_table.role, users_table.is_blocked)
+            .where(users_table.id == FormatParameter())
+        )
+
+        sql_string = query.get_sql()
+
+        logger.info(sql_string)
+
+        await cur.execute(sql_string, (user_id,))
+        result = await cur.fetchone()
+
+        if result is None:
+            raise UserNotFoundError("Could not find user.")
+
+        return UserStatus(**result)
 
 
 async def find_user_credentials_by_email(conn: Connection, email: str) -> UserCredentials:
@@ -168,6 +190,21 @@ async def invalidate_session_tokens(conn: Connection, session_id: str) -> None:
         logger.info(sql_string)
 
         await cur.execute(sql_string, (session_id,))
+
+
+async def invalidate_user_tokens(conn: Connection, user_id: int) -> None:
+    async with conn.cursor() as cur:
+        query = (
+            MySQLQuery.update(refresh_tokens_table)
+            .set("is_valid", 0)
+            .where(refresh_tokens_table.user_id == FormatParameter())
+        )
+
+        sql_string = query.get_sql()
+
+        logger.info(sql_string)
+
+        await cur.execute(sql_string, (user_id,))
 
 
 async def invalidate_refresh_token(conn: Connection, refresh_token_hash: str) -> None:

@@ -51,6 +51,12 @@ class UserCredentials(BaseModel):
     password: str
 
 
+class UserStatus(BaseModel):
+    id: int
+    role: Role
+    is_blocked: bool
+
+
 class UserPayload(BaseModel):
     email: EmailStr
     password: str
