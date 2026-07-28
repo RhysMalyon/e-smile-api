@@ -35,8 +35,8 @@ async def main():
             except UserNotFoundError:
                 logger.warning("User not inserted.")
 
-            login_response = await login(conn, email, password)
-            print(login_response)
+            login_result = await login(conn, email, password)
+            print(login_result)
 
             raise RollbackTestTransaction("Test complete — rolling back.")
     except RollbackTestTransaction as e:

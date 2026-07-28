@@ -16,7 +16,7 @@ from app.auth.repository import (
     invalidate_user_tokens,
     update_last_accessed,
 )
-from app.auth.schemas import InsertTokenPayload, JWTPayload, LoginResponse, TokenPair
+from app.auth.schemas import InsertTokenPayload, JWTPayload, LoginResult, TokenPair
 from app.auth.security import (
     create_access_token,
     generate_refresh_token,
@@ -37,7 +37,7 @@ class InvalidCredentialsError(Exception):
     status_code = 401
 
 
-async def login(conn: Connection, email: str, password: str) -> LoginResponse:
+async def login(conn: Connection, email: str, password: str) -> LoginResult:
     try:
         user = await find_user_credentials_by_email(conn, email)
     except UserNotFoundError:
@@ -83,7 +83,7 @@ async def login(conn: Connection, email: str, password: str) -> LoginResponse:
 
     await update_last_accessed(conn, user_id=user.id)
 
-    return LoginResponse(access_token=access_token, role=user.role)
+    return LoginResult(access_token=access_token, refresh_token=raw_refresh_token, role=user.role)
 
 
 class InvalidRefreshTokenError(Exception):
@@ -145,3 +145,7 @@ async def refresh(conn: Connection, refresh_token_hash: str) -> TokenPair:
     )
 
     return TokenPair(access_token=access_token, refresh_token=raw_refresh_token)
+
+
+async def logout(conn: Connection, refresh_token_hash: str) -> None:
+    await invalidate_refresh_token(conn, refresh_token_hash)

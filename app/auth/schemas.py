@@ -25,6 +25,10 @@ class LoginResponse(TokenResponse):
     role: Role
 
 
+class LoginResult(TokenPair):
+    role: Role
+
+
 class RefreshResponse(TokenResponse):
     pass
 
