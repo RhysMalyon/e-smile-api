@@ -161,7 +161,7 @@ async def find_hashed_refresh_token(
         query = (
             MySQLQuery.from_(refresh_tokens_table)
             .select("user_id", "session_id", "is_valid")
-            .where(users_table.token_hash == FormatParameter())
+            .where(refresh_tokens_table.token_hash == FormatParameter())
         )
 
         sql_string = query.get_sql()
