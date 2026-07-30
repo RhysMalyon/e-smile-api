@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from aiomysql import Connection
 
+from app.auth.exceptions import InvalidCredentialsError, InvalidRefreshTokenError
 from app.auth.repository import (
     RefreshTokenNotFoundError,
     UserNotFoundError,
@@ -31,10 +32,6 @@ logger = logging.getLogger(__name__)
 # Invalid user verification flow
 invalid_plain_password = "dummy"
 invalid_hashed_password = hash_password(invalid_plain_password)
-
-
-class InvalidCredentialsError(Exception):
-    status_code = 401
 
 
 async def login(conn: Connection, email: str, password: str) -> LoginResult:
@@ -84,10 +81,6 @@ async def login(conn: Connection, email: str, password: str) -> LoginResult:
     await update_last_accessed(conn, user_id=user.id)
 
     return LoginResult(access_token=access_token, refresh_token=raw_refresh_token, role=user.role)
-
-
-class InvalidRefreshTokenError(Exception):
-    status_code = 401
 
 
 async def refresh(conn: Connection, refresh_token_hash: str) -> TokenPair:

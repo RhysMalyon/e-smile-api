@@ -12,6 +12,7 @@ class AppSettings(BaseModel):
     title: str
     version: str
     debug: bool = False
+    is_production: bool = False
 
 
 class AuthSettings(BaseModel):
@@ -20,6 +21,7 @@ class AuthSettings(BaseModel):
 
 class CorsSettings(BaseModel):
     allowed_origins: list[str] = Field(default_factory=list)
+    allow_credentials: bool = False
     allowed_headers: list[str] = ["Content-Type", "Authorization"]
     allowed_methods: list[str] = ["GET", "POST", "PUT", "PATCH", "DELETE"]
     expose_headers: list[str] = ["Content-Disposition"]

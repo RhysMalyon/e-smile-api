@@ -5,6 +5,12 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .auth.exceptions import (
+    InvalidCredentialsError,
+    InvalidRefreshTokenError,
+    auth_exception_handler,
+)
+from .auth.router import router as auth_router
 from .core.config import settings
 from .core.database import db_service
 from .core.logging_config import setup_logging
@@ -31,27 +37,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors.allowed_origins,
+    allow_credentials=settings.cors.allow_credentials,
     allow_methods=settings.cors.allowed_methods,
     allow_headers=settings.cors.allowed_headers,
     expose_headers=settings.cors.expose_headers,
 )
 
+# Exception Handlers
+app.add_exception_handler(InvalidCredentialsError, auth_exception_handler)
+app.add_exception_handler(InvalidRefreshTokenError, auth_exception_handler)
 
-@app.get("/health")
-async def health():
-    try:
-        return {"status": "ok"}
-    except Exception as e:
-        logger.error("Health check failed", exc_info=e)
-        return {"status": "error"}
 
+# Routes
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
 
 if __name__ == "__main__":
     uvicorn.run(
-        "app.main:app --reload",
+        "app.main:app",
         host=settings.app.host,
         port=settings.app.port,
         log_config=None,
