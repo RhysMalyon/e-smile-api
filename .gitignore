@@ -140,3 +140,4 @@ Thumbs.db
 *.sqlite
 
 *.sql
+/sql
