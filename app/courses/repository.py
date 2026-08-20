@@ -54,7 +54,6 @@ async def create(conn: Connection, course_payload: dict[str, Any]) -> int:
 
 
 async def update_by_id(conn: Connection, id: int, update_course_payload: dict[str, Any]) -> int:
-    # raise CourseNotFoundError if no rows updated
     async with conn.cursor() as cur:
         query = MySQLQuery.update(courses_table)
 
@@ -71,7 +70,15 @@ async def update_by_id(conn: Connection, id: int, update_course_payload: dict[st
 
         logger.info(sql_string)
 
-        await cur.execute(sql_string, tuple(values))
+        try:
+            await cur.execute(sql_string, tuple(values))
+        except IntegrityError as exc:
+            # Not Duplicate entry (1062)
+            if exc.args[0] != 1062:
+                raise
+
+            logger.warning("Duplicate entry, could not update.")
+            raise CourseAlreadyExistsError() from exc
 
         if cur.rowcount == 0:
             raise CourseNotFoundError("Could not find course.")

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Course(BaseModel):
@@ -32,3 +32,9 @@ class UpdateCourseRequest(BaseModel):
     length: Optional[int] = Field(default=None, gt=0)
     price: Optional[int] = Field(default=None, gt=0)
     is_active: Optional[bool] = None
+
+    @model_validator(mode="after")
+    def validate_not_empty(self):
+        if not self.model_dump(exclude_unset=True):
+            raise ValueError("At least one field must be provided")
+        return self
