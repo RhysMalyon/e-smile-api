@@ -35,6 +35,14 @@ class UpdateCourseRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_not_empty(self):
-        if not self.model_dump(exclude_unset=True):
+        provided = self.model_dump(exclude_unset=True)
+
+        if not provided:
             raise ValueError("At least one field must be provided")
+
+        # Every column is NOT NULL, so an explicit `null` can never be applied.
+        null_fields = [field for field, value in provided.items() if value is None]
+        if null_fields:
+            raise ValueError(f"Fields cannot be null: {', '.join(null_fields)}")
+
         return self

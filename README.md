@@ -1,6 +1,6 @@
 # e-smile API
 
-Backend API for the e-smile teeth-whitening business: staff authentication, an admin back-office, and the public booking flow. Implemented so far: `auth` and `courses`. In progress: `time_off`, `customers`, `appointments` (including availability).
+Backend API for the e-smile teeth-whitening business: staff authentication, an admin back-office, and the public booking flow. Implemented so far: `auth`, `courses` and `time_off`. In progress: `customers`, `appointments` (including availability).
 
 ## Tech Stack
 
@@ -24,6 +24,7 @@ app/
 ├── main.py                  # FastAPI app, lifespan, CORS, exception handlers, router registration (prefix + tags)
 ├── core/
 │   ├── config.py             # Settings hierarchy (pydantic-settings)
+│   ├── exceptions.py         # domain_exception_handler — the one shared handler for all domain exceptions
 │   ├── database.py           # DatabaseService — aiomysql pool singleton + ContextVar transaction guard
 │   ├── dependencies.py       # get_transaction() — DI-based connection/transaction yield
 │   ├── logging_config.py     # Structured logging unified with Uvicorn; correlation_id ContextVar
@@ -37,19 +38,26 @@ app/
 │   ├── schemas.py            # Request/response/internal Pydantic models
 │   ├── security.py           # Password hashing, token hashing, JWT sign/verify
 │   ├── dependencies.py       # get_current_user, require_permission
-│   └── exceptions.py         # Custom exceptions + FastAPI exception handlers
+│   └── exceptions.py         # InvalidCredentialsError, InvalidRefreshTokenError (401)
 ├── courses/
 │   ├── router.py             # /courses (public list), /courses/admin, /courses/{course_id}
 │   ├── service.py            # Thin passthroughs; extracts dicts from request schemas
 │   ├── repository.py         # PyPika queries; translates MySQL duplicate-key (1062) to a domain error
 │   ├── schemas.py            # Course, PublicCourseResponse, Create/UpdateCourseRequest
-│   └── exceptions.py         # CourseNotFoundError (404), CourseAlreadyExistsError (409) + handler
+│   └── exceptions.py         # CourseNotFoundError (404), CourseAlreadyExistsError (409)
+├── time_off/
+│   ├── router.py             # /time-off CRUD (admin write, staff read)
+│   ├── service.py            # CRUD + get_time_off(start, end), the wrapper appointments will call
+│   ├── repository.py         # PyPika queries; get_overlapping() does the strict-overlap fetch
+│   ├── schemas.py            # TimeOff, Create/UpdateTimeOffRequest, HourAlignedDatetime
+│   └── exceptions.py         # TimeOffNotFoundError (404), TimeOffRangeError (422), TimeOffConflictError (409)
 └── scripts/
     ├── login_test.py         # Manual integration test: insert user → login → rollback
-    └── refresh_test.py       # Manual integration test: login → refresh → reuse detection → rollback
+    ├── refresh_test.py       # Manual integration test: login → refresh → reuse detection → rollback
+    └── time_off_test.py      # Manual integration test: time_off CRUD + overlap edges → rollback
 ```
 
-Planned: `time_off/`, `customers/`, `appointments/` (see [Domain model and business rules](#domain-model-and-business-rules)). Each feature module follows the same shape as `auth/` and `courses/`: router, service, repository, schemas, and an `exceptions.py` once it has errors raised across files.
+Planned: `customers/`, `appointments/` (see [Domain model and business rules](#domain-model-and-business-rules)). Each feature module follows the same shape as `auth/` and `courses/`: router, service, repository, schemas, and an `exceptions.py` once it has errors raised across files.
 
 ---
 
@@ -181,8 +189,8 @@ Decisions that aren't obvious from reading the code alone — worth knowing befo
 - **Repository** takes plain values or `dict`s, never request schemas. It returns domain objects, raises not-found errors itself, and translates known MySQL errors (for example error code 1062, duplicate entry) into domain exceptions. Any other `IntegrityError` is re-raised untouched.
 - **Service** is thin: it extracts data from request schemas (`model_dump(exclude_unset=True)` for updates) and composes repository calls. Domain errors propagate unchanged.
 - **Router** declares permissions with `dependencies=[Depends(require_permission(...))]`, sets explicit status codes only where the default is wrong (`201` on create, `204` on logout), and uses relative paths. The prefix and tags are applied in `main.py` via `include_router(..., prefix=..., tags=[...])`. Static routes (`/admin`) must be declared before parameterized ones (`/{course_id}`).
-- **Exceptions** carry their own `status_code` and are rendered by one handler per feature, registered in `main.py` with `add_exception_handler`.
-- **Update schemas** reject empty bodies with a `model_validator(mode="after")`, so no service or repository code needs to handle an empty `SET`.
+- **Exceptions** carry their own `status_code` and are rendered by the single shared `domain_exception_handler` (`app/core/exceptions.py`), registered per exception class in `main.py` with `add_exception_handler`.
+- **Update schemas** reject empty bodies and explicit `null`s (every column is `NOT NULL`) with a `model_validator(mode="after")`, so no service or repository code needs to handle an empty `SET` or a null that would surface as a DB 500.
 - All routes, including read-only ones, use `get_transaction`. This gives multi-query reads a consistent snapshot, and the `BEGIN`/`COMMIT` overhead is negligible at this scale.
 
 ### Database pool details
@@ -225,9 +233,16 @@ Decisions that aren't obvious from reading the code alone — worth knowing befo
 | Role    | Permissions                                           |
 | ------- | ----------------------------------------------------- |
 | `admin` | All permissions (inherits entire `Permission` enum)   |
-| `staff` | `appointments:read`, `customers:read`, `courses:read` |
+| `staff` | `appointments:read`, `customers:read`, `courses:read`, `time_off:read` |
 
-`courses:write` is admin only. `appointments:write` is public (the booking form), `appointments:delete` is admin only, and `time_off` permissions (admin write) will be added with that feature.
+`courses:write` and `time_off:write` (create, update and delete) are admin only. `appointments:write` is public (the booking form) and `appointments:delete` is admin only.
+
+### Time off
+
+- `time_off` datetimes are **naive wall-clock times** in the shop's local time. The API rejects timezone-aware input (`Z`, `+09:00`), because the `DATETIME` columns carry no zone and silently shifting values would move a block by hours. The pool's UTC session time zone only affects `TIMESTAMP` columns (`created_at`/`updated_at`).
+- `HourAlignedDatetime` (in `time_off/schemas.py`) and the `start_at < end_at` validators return clean 422s before the DB `CHECK`s would fail. `PATCH` may send only one side of the range, so the service merges it with the stored row and raises `TimeOffRangeError` (422) if the result is inverted.
+- `get_time_off(conn, start, end)` in `time_off/service.py` returns blocks that strictly overlap `[start, end)` (`start_at < end AND end_at > start`; touching edges don't count). This is the entry point for `appointments`.
+- Create/update call `_ensure_no_appointment_conflicts`, currently a **no-op stub**. When `appointments` exists it must raise `TimeOffConflictError` (409) listing the conflicting dates.
 
 ### `is_production` controls cookie security, not `debug`
 
