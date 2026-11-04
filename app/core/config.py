@@ -34,7 +34,6 @@ class DbSettings(BaseModel):
     password: str
     database: str
     charset: str = "utf8mb4"
-    collate: str = "utf8mb4_unicode_ci"
     ssl_verify: Optional[bool] = False
     ssl_ca: Optional[str] = None
 

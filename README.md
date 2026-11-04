@@ -1,6 +1,6 @@
 # e-smile API
 
-Backend API for the e-smile dental practice admin back-office. Handles staff authentication and (in progress) practice management features — appointments, customers, holidays.
+Backend API for the e-smile teeth-whitening business: staff authentication, an admin back-office, and the public booking flow. Implemented so far: `auth` and `courses`. In progress: `time_off`, `customers`, `appointments` (including availability).
 
 ## Tech Stack
 
@@ -21,7 +21,7 @@ Organized by **feature/domain**, not by technical layer (Locality of Reference) 
 
 ```
 app/
-├── main.py                  # FastAPI app, lifespan, CORS, exception handlers, router registration
+├── main.py                  # FastAPI app, lifespan, CORS, exception handlers, router registration (prefix + tags)
 ├── core/
 │   ├── config.py             # Settings hierarchy (pydantic-settings)
 │   ├── database.py           # DatabaseService — aiomysql pool singleton + ContextVar transaction guard
@@ -31,19 +31,25 @@ app/
 ├── dependencies/
 │   └── db.py                 # (stub — future shared DB dependency layer)
 ├── auth/
-│   ├── router.py              # /auth/login, /auth/refresh, /auth/logout
-│   ├── service.py              # login(), refresh(), logout() orchestration
-│   ├── repository.py           # PyPika queries against users / refresh_tokens
-│   ├── schemas.py               # Request/response/internal Pydantic models
-│   ├── security.py              # Password hashing, token hashing, JWT sign/verify
-│   ├── dependencies.py          # get_current_user, require_permission
-│   └── exceptions.py            # Custom exceptions + FastAPI exception handlers
+│   ├── router.py             # /auth/login, /auth/refresh, /auth/logout
+│   ├── service.py            # login(), refresh(), logout() orchestration
+│   ├── repository.py         # PyPika queries against users / refresh_tokens
+│   ├── schemas.py            # Request/response/internal Pydantic models
+│   ├── security.py           # Password hashing, token hashing, JWT sign/verify
+│   ├── dependencies.py       # get_current_user, require_permission
+│   └── exceptions.py         # Custom exceptions + FastAPI exception handlers
+├── courses/
+│   ├── router.py             # /courses (public list), /courses/admin, /courses/{course_id}
+│   ├── service.py            # Thin passthroughs; extracts dicts from request schemas
+│   ├── repository.py         # PyPika queries; translates MySQL duplicate-key (1062) to a domain error
+│   ├── schemas.py            # Course, PublicCourseResponse, Create/UpdateCourseRequest
+│   └── exceptions.py         # CourseNotFoundError (404), CourseAlreadyExistsError (409) + handler
 └── scripts/
-    ├── login_test.py            # Manual integration test: insert user → login → rollback
-    └── refresh_test.py          # Manual integration test: login → refresh → reuse detection → rollback
+    ├── login_test.py         # Manual integration test: insert user → login → rollback
+    └── refresh_test.py       # Manual integration test: login → refresh → reuse detection → rollback
 ```
 
-Each future feature module (`appointments`, `customers`, `holidays`, ...) follows the same shape as `auth/`.
+Planned: `time_off/`, `customers/`, `appointments/` (see [Domain model and business rules](#domain-model-and-business-rules)). Each feature module follows the same shape as `auth/` and `courses/`: router, service, repository, schemas, and an `exceptions.py` once it has errors raised across files.
 
 ---
 
@@ -65,7 +71,9 @@ pip install -r requirements.txt
 
 ### 3. Database
 
-Create the database and run the DDL for the `users` and `refresh_tokens` tables. Both tables must exist before the app can start meaningfully.
+Create the database and run the DDL for the tables, in dependency order: `users`, `refresh_tokens`, `courses`, `customers`, `time_off`, `appointments` (`appointments` has foreign keys to `courses` and `customers`). Tables use `ENGINE=InnoDB`, `utf8mb4`, `utf8mb4_0900_ai_ci`.
+
+Repositories reference tables as `Table("<name>", schema="e-smile")`, so the schema name is currently hardcoded in code, not taken from `DB__DATABASE`.
 
 ### 4. Environment Variables
 
@@ -87,9 +95,8 @@ DB__USER=
 DB__PASSWORD=
 DB__DATABASE=e-smile
 DB__CHARSET=utf8mb4
-DB__COLLATE=utf8mb4_unicode_ci
-DB__SSL_VERIFY=False
-DB__SSL_CA=
+DB__SSL_VERIFY=False   # set True in production when using SSL
+DB__SSL_CA=            # path to CA certificate; leave empty to disable SSL
 
 # JWT
 JWT__PUBLIC_KEY=
@@ -153,10 +160,36 @@ email-validator==2.3.0
 
 Regenerate with `pip freeze > requirements.txt` after adding or upgrading packages.
 
+---
 
 ## Key Architectural Notes
 
-Decisions that aren't obvious from reading the code alone — worth knowing before modifying auth-adjacent code.
+Decisions that aren't obvious from reading the code alone — worth knowing before modifying related code.
+
+### Domain model and business rules
+
+- Every appointment starts on the hour and occupies a full one-hour slot, regardless of course length. There is a single operator, so two appointments cannot share a `date` (`UNIQUE` on `appointments.date`).
+- `appointments.date` and `time_off.start_at`/`end_at` are hour-aligned via `CHECK` constraints; `time_off` also enforces `start_at < end_at`.
+- `courses.length` is display/admin information only and is deliberately not snapshotted. `appointments.price_at_booking` is snapshotted so historical prices survive course edits.
+- Courses are never hard-deleted (`is_active` soft delete); the `appointments.course_id` FK is `ON DELETE RESTRICT`.
+- Customers have no login. `customers.email` is the sole unique identifier; `tel` is deliberately not unique. On booking, a customer is looked up by email only. A match is reused unchanged, and a differing `tel` is noted in `appointments.admin_notes` instead of overwriting. `appointments.customer_id` is nullable with `ON DELETE SET NULL` so a customer can be erased while keeping the appointment record.
+- Business hours, lunch, weekly closed days (Thursday/Sunday) and national holidays are server-side config, not DB tables.
+- Availability (planned): a public `GET /availability` in `appointments/router.py` (a second `APIRouter`), merging `appointments.date` and `time_off` ranges in Python into `{date: [ISO hour strings]}` for a requested range. `appointments` reads time-off through `time_off/service.py`, not its repository.
+
+### Layer responsibilities and conventions
+
+- **Repository** takes plain values or `dict`s, never request schemas. It returns domain objects, raises not-found errors itself, and translates known MySQL errors (for example error code 1062, duplicate entry) into domain exceptions. Any other `IntegrityError` is re-raised untouched.
+- **Service** is thin: it extracts data from request schemas (`model_dump(exclude_unset=True)` for updates) and composes repository calls. Domain errors propagate unchanged.
+- **Router** declares permissions with `dependencies=[Depends(require_permission(...))]`, sets explicit status codes only where the default is wrong (`201` on create, `204` on logout), and uses relative paths. The prefix and tags are applied in `main.py` via `include_router(..., prefix=..., tags=[...])`. Static routes (`/admin`) must be declared before parameterized ones (`/{course_id}`).
+- **Exceptions** carry their own `status_code` and are rendered by one handler per feature, registered in `main.py` with `add_exception_handler`.
+- **Update schemas** reject empty bodies with a `model_validator(mode="after")`, so no service or repository code needs to handle an empty `SET`.
+- All routes, including read-only ones, use `get_transaction`. This gives multi-query reads a consistent snapshot, and the `BEGIN`/`COMMIT` overhead is negligible at this scale.
+
+### Database pool details
+
+- **`FOUND_ROWS`:** the pool is created with `client_flag=CLIENT.FOUND_ROWS`, so `cursor.rowcount` after an `UPDATE` means rows _matched_ rather than rows _changed_. Without it, a PATCH that re-sends the stored values would look like "not found".
+- **Cancellation-safe rollback:** `transaction()` catches `BaseException`, rolls back, and re-raises, so `asyncio.CancelledError` also triggers an explicit rollback. The re-raise is mandatory.
+- **Transaction guard:** `DatabaseService.transaction()` uses a `ContextVar` (`db_connection_ctx`) to detect if a connection is already active in the current async context. If `get_transaction()` is called while a transaction is already open, it raises `RuntimeError("Connection already present in context")` immediately — preventing silent nesting that could cause unexpected rollback or commit behaviour.
 
 ### `get_current_user` is deliberately stateless — no DB lookup per request
 
@@ -184,8 +217,17 @@ Decisions that aren't obvious from reading the code alone — worth knowing befo
 ### Permissions are config, not database, by design
 
 - `Role` and `Permission` are fixed `StrEnum`s in `app/core/permissions.py`. `ROLE_PERMISSIONS` maps role → allowed permissions, hardcoded.
-- This was a deliberate rejection of a fully-normalized DB-driven RBAC system — roles/permissions haven't changed in 3+ years for this practice, and a permission only has effect once application code checks for it, meaning DB-editable permissions would still require a code change to matter. Revisit only if permissions genuinely become dynamic/runtime-editable by an admin.
+- This was a deliberate rejection of a fully-normalized DB-driven RBAC system — roles/permissions haven't changed in 3+ years for this business, and a permission only has effect once application code checks for it, meaning DB-editable permissions would still require a code change to matter. Revisit only if permissions genuinely become dynamic/runtime-editable by an admin.
 - `require_permission(Permission.X)` (in `auth/dependencies.py`) is the enforcement point for any protected route in **any** feature module — it's cross-cutting infrastructure, safe to import from other feature modules without violating Locality of Reference (unlike, say, keeping `Permission` inside the `auth` module itself, which was deliberately avoided).
+
+#### Current role → permission mapping
+
+| Role    | Permissions                                           |
+| ------- | ----------------------------------------------------- |
+| `admin` | All permissions (inherits entire `Permission` enum)   |
+| `staff` | `appointments:read`, `customers:read`, `courses:read` |
+
+`courses:write` is admin only. `appointments:write` is public (the booking form), `appointments:delete` is admin only, and `time_off` permissions (admin write) will be added with that feature.
 
 ### `is_production` controls cookie security, not `debug`
 
@@ -199,13 +241,6 @@ Decisions that aren't obvious from reading the code alone — worth knowing befo
 
 When a user is not found by email, `service.login()` still calls `verify_password()` with a dummy credential before raising `InvalidCredentialsError`. This ensures the response time for "user not found" and "wrong password" is indistinguishable, preventing timing-based user enumeration. Don't remove or short-circuit this dummy check.
 
-### Permissions: current role → permission mapping
-
-| Role    | Permissions                                                   |
-|---------|---------------------------------------------------------------|
-| `admin` | All permissions (inherits entire `Permission` enum)           |
-| `staff` | `appointments:read`, `customers:read`                         |
-
 ### Logging: structured output with correlation ID
 
 `app/core/logging_config.py` replaces default Uvicorn handlers with a single unified root logger so all output (app + Uvicorn) shares the same format:
@@ -216,13 +251,15 @@ When a user is not found by email, `service.login()` still calls `verify_passwor
 
 A `correlation_id` `ContextVar` is injected into every log record via `CorrelationIdFilter`. It defaults to `"-"` — middleware that sets a per-request correlation ID (e.g. from an `X-Request-ID` header) can populate this for distributed tracing. The middleware does not exist yet but the hook is in place.
 
-### Transaction guard: nested transactions are rejected
+---
 
-`DatabaseService.transaction()` uses a `ContextVar` (`db_connection_ctx`) to detect if a connection is already active in the current async context. If `get_transaction()` is called while a transaction is already open, it raises `RuntimeError("Connection already present in context")` immediately — preventing silent nesting that could cause unexpected rollback or commit behaviour.
+## Testing approach (current)
 
-### Testing approach (current)
+No `pytest` suite yet — deliberately deferred in favor of learning FastAPI/the domain first. Two complementary approaches are used instead.
 
-No `pytest` suite yet — deliberately deferred in favor of learning FastAPI/the domain first. In its place: standalone scripts in `app/scripts/` that use `db_service.transaction()` directly, run real logic against a real test DB connection, and deliberately raise at the end to force a rollback — leaving no residue.
+### Standalone scripts
+
+Scripts in `app/scripts/` use `db_service.transaction()` directly, run real logic against a real test DB connection, and deliberately raise at the end to force a rollback — leaving no residue.
 
 Run them from the project root (with `.venv` active):
 
@@ -232,3 +269,9 @@ python -m app.scripts.refresh_test
 ```
 
 `refresh_test.py` specifically exercises token rotation and reuse detection — it asserts that presenting a previously-rotated token invalidates the entire session family. This pattern is worth reusing for new feature modules until a formal test suite is introduced.
+
+### HTTP-level checks (Bruno)
+
+A Bruno collection covers the API over HTTP: a login request stores the access token in a variable, collection-level Bearer auth applies it to protected requests, and each case is its own request with status assertions.
+
+Cases covered for `courses`: create (201), duplicate name (409), empty PATCH (422), no-op PATCH (200), name collision on PATCH (409), missing id (404), deactivation visibility (public vs admin list), no token (401) and insufficient permission (403).

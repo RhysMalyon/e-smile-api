@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import ssl
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import AsyncGenerator, cast
@@ -28,6 +29,15 @@ class DatabaseService:
                 settings = self.config
 
                 try:
+                    ssl_context = None
+                    if settings.ssl_ca:
+                        ssl_context = ssl.create_default_context(cafile=settings.ssl_ca)
+                        if not settings.ssl_verify:
+                            # Encrypts the connection but skips certificate checks.
+                            # Dev/testing only, never use in production.
+                            ssl_context.check_hostname = False
+                            ssl_context.verify_mode = ssl.CERT_NONE
+
                     self.pool = await aiomysql.create_pool(
                         host=settings.host,
                         port=settings.port,
@@ -35,13 +45,18 @@ class DatabaseService:
                         password=settings.password,
                         db=settings.database,
                         client_flag=CLIENT.FOUND_ROWS,
+                        charset=settings.charset,
+                        ssl=ssl_context,
                         # Handle commit/rollback in dedicated handler
                         autocommit=False,
                         # Set the session timezone to UTC
                         init_command="SET SESSION time_zone='+00:00'",
                     )
 
-                    logger.info("Database pool created.")
+                    logger.info(
+                        "Database pool created (SSL %s).",
+                        "enabled" if ssl_context else "disabled",
+                    )
                 except Exception as e:
                     logger.error(f"Error creating database pool: {e}")
                     raise
