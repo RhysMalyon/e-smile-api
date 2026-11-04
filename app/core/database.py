@@ -3,6 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import AsyncGenerator, cast
+from pymysql.constants import CLIENT
 
 import aiomysql
 
@@ -33,6 +34,7 @@ class DatabaseService:
                         user=settings.user,
                         password=settings.password,
                         db=settings.database,
+                        client_flag=CLIENT.FOUND_ROWS,
                         # Handle commit/rollback in dedicated handler
                         autocommit=False,
                         # Set the session timezone to UTC
@@ -63,11 +65,11 @@ class DatabaseService:
                 yield conn
                 # Commit if no exceptions
                 await conn.commit()
-            except Exception as e:
+            except BaseException:
                 # Rollback on any error
                 await conn.rollback()
                 # Re-raise exception
-                raise e
+                raise
             finally:
                 db_connection_ctx.reset(token)
 

@@ -1,10 +1,11 @@
 import logging
 from typing import Any, List
 
-from aiomysql import Connection, IntegrityError
 import aiomysql
+from aiomysql import Connection, IntegrityError
 from pypika import FormatParameter, MySQLQuery, Table
 
+from app.courses.exceptions import CourseAlreadyExistsError, CourseNotFoundError
 from app.courses.schemas import (
     Course,
     PublicCourseResponse,
@@ -13,14 +14,6 @@ from app.courses.schemas import (
 logger = logging.getLogger(__name__)
 
 courses_table = Table("courses", schema="e-smile")
-
-
-class CourseAlreadyExistsError(Exception):
-    pass
-
-
-class CourseNotFoundError(Exception):
-    pass
 
 
 async def create(conn: Connection, course_payload: dict[str, Any]) -> int:

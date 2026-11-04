@@ -10,7 +10,13 @@ from .auth.exceptions import (
     InvalidRefreshTokenError,
     auth_exception_handler,
 )
+from .courses.exceptions import (
+    CourseAlreadyExistsError,
+    CourseNotFoundError,
+    course_exception_handler,
+)
 from .auth.router import router as auth_router
+from .courses.router import router as courses_router
 from .core.config import settings
 from .core.database import db_service
 from .core.logging_config import setup_logging
@@ -50,10 +56,13 @@ app.add_middleware(
 # Exception Handlers
 app.add_exception_handler(InvalidCredentialsError, auth_exception_handler)
 app.add_exception_handler(InvalidRefreshTokenError, auth_exception_handler)
+app.add_exception_handler(CourseNotFoundError, course_exception_handler)
+app.add_exception_handler(CourseAlreadyExistsError, course_exception_handler)
 
 
 # Routes
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(courses_router, prefix="/courses", tags=["courses"])
 
 if __name__ == "__main__":
     uvicorn.run(
