@@ -1,0 +1,30 @@
+info:
+  name: missing id (404)
+  type: http
+  seq: 5
+
+http:
+  method: PATCH
+  url: "{{api_url}}/courses/99999"
+  body:
+    type: json
+    data: |-
+      {
+        "price": 6000
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 404", function () {
+          expect(res.status).to.equal(404);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

@@ -1,0 +1,30 @@
+info:
+  name: Create (No Auth) (401)
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: "{{api_url}}/time-off"
+  body:
+    type: json
+    data: |-
+      {
+        "start_at": "2030-08-01T10:00:00",
+        "end_at": "2030-08-01T12:00:00"
+      }
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 401", function () {
+          expect(res.status).to.equal(401);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

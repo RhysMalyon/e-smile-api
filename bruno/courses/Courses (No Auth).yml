@@ -1,0 +1,30 @@
+info:
+  name: Courses (No Auth) (200)
+  type: http
+  seq: 11
+
+http:
+  method: GET
+  url: "{{api_url}}/courses"
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 200", function () {
+          expect(res.status).to.equal(200);
+        });
+
+        test("lists the active course without internal fields", function () {
+          const c = res.body.find((x) => x.name === bru.getVar("course_name"));
+          expect(c).to.not.equal(undefined);
+          expect(c).to.not.have.property("id");
+          expect(c).to.not.have.property("is_active");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

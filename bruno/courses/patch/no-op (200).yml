@@ -1,0 +1,37 @@
+info:
+  name: no-op (200)
+  type: http
+  seq: 2
+
+http:
+  method: PATCH
+  url: "{{api_url}}/courses/{{course_id}}"
+  body:
+    type: json
+    data: |-
+      {
+        "name": "{{course_name}}",
+        "length": 30,
+        "price": 5000
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 200", function () {
+          expect(res.status).to.equal(200);
+        });
+
+        test("values unchanged", function () {
+          expect(res.body.name).to.equal(bru.getVar("course_name"));
+          expect(res.body.price).to.equal(5000);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

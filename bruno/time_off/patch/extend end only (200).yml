@@ -1,0 +1,35 @@
+info:
+  name: extend end only (200)
+  type: http
+  seq: 4
+
+http:
+  method: PATCH
+  url: "{{api_url}}/time-off/{{time_off_id}}"
+  body:
+    type: json
+    data: |-
+      {
+        "end_at": "2030-08-01T15:00:00"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 200", function () {
+          expect(res.status).to.equal(200);
+        });
+
+        test("start kept, end updated", function () {
+          expect(res.body.start_at).to.equal("2030-08-01T10:00:00");
+          expect(res.body.end_at).to.equal("2030-08-01T15:00:00");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

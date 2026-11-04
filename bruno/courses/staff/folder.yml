@@ -1,0 +1,7 @@
+info:
+  name: staff (403)
+  type: folder
+  seq: 14
+
+request:
+  auth: inherit

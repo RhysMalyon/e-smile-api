@@ -1,0 +1,35 @@
+info:
+  name: update price (200)
+  type: http
+  seq: 6
+
+http:
+  method: PATCH
+  url: "{{api_url}}/courses/{{course_id}}"
+  body:
+    type: json
+    data: |-
+      {
+        "price": 6000
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 200", function () {
+          expect(res.status).to.equal(200);
+        });
+
+        test("price changed, name kept", function () {
+          expect(res.body.price).to.equal(6000);
+          expect(res.body.name).to.equal(bru.getVar("course_name"));
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

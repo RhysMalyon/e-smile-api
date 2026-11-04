@@ -1,0 +1,30 @@
+info:
+  name: still in admin list (200)
+  type: http
+  seq: 2
+
+http:
+  method: GET
+  url: "{{api_url}}/courses/admin"
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 200", function () {
+          expect(res.status).to.equal(200);
+        });
+
+        test("deactivated course is present and inactive", function () {
+          const c = res.body.find((x) => x.id === bru.getVar("course_id"));
+          expect(c).to.not.equal(undefined);
+          expect(c.is_active).to.equal(false);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

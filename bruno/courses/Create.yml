@@ -1,0 +1,39 @@
+info:
+  name: Create (201)
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{api_url}}/courses"
+  body:
+    type: json
+    data: |-
+      {
+        "name": "Test Course {{$timestamp}}",
+        "length": 30,
+        "price": 5000,
+        "is_active": true
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: after-response
+      code: bru.setVar("course_id", res.body.id); bru.setVar("course_name", res.body.name);
+    - type: tests
+      code: |-
+        test("status is 201", function () {
+          expect(res.status).to.equal(201);
+        });
+
+        test("is active by default", function () {
+          expect(res.body.is_active).to.equal(true);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

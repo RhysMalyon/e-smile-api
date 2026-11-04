@@ -1,0 +1,8 @@
+name: local
+variables:
+  - secret: true
+    name: login_email
+    description: ""
+  - secret: true
+    name: login_password
+    description: ""

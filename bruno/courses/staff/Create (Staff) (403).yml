@@ -1,0 +1,33 @@
+info:
+  name: Create (Staff) (403)
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: "{{api_url}}/courses"
+  body:
+    type: json
+    data: |-
+      {
+        "name": "Should Not Exist",
+        "length": 30,
+        "price": 5000,
+        "is_active": true
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 403", function () {
+          expect(res.status).to.equal(403);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

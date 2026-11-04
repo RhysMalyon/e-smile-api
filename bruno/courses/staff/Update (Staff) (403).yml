@@ -1,0 +1,30 @@
+info:
+  name: Update (Staff) (403)
+  type: http
+  seq: 3
+
+http:
+  method: PATCH
+  url: "{{api_url}}/courses/{{course_id}}"
+  body:
+    type: json
+    data: |-
+      {
+        "price": 7000
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 403", function () {
+          expect(res.status).to.equal(403);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
