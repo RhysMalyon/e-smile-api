@@ -8,6 +8,7 @@ class Permission(StrEnum):
     COURSES_WRITE = "courses:write"
     COURSES_DELETE = "courses:delete"
     CUSTOMERS_READ = "customers:read"
+    CUSTOMERS_WRITE = "customers:write"
     CUSTOMERS_DELETE = "customers:delete"
     TIME_OFF_READ = "time_off:read"
     TIME_OFF_WRITE = "time_off:write"
@@ -24,6 +25,7 @@ ROLE_PERMISSIONS = {
         Permission.APPOINTMENTS_READ,
         Permission.COURSES_READ,
         Permission.CUSTOMERS_READ,
+        Permission.CUSTOMERS_WRITE,
         Permission.TIME_OFF_READ,
     },
 }

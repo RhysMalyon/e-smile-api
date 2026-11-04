@@ -1,6 +1,6 @@
 # e-smile API
 
-Backend API for the e-smile teeth-whitening business: staff authentication, an admin back-office, and the public booking flow. Implemented so far: `auth`, `courses` and `time_off`. In progress: `customers`, `appointments` (including availability).
+Backend API for the e-smile teeth-whitening business: staff authentication, an admin back-office, and the public booking flow. Implemented so far: `auth`, `courses`, `time_off` and `customers`. In progress: `appointments` (including availability).
 
 ## Tech Stack
 
@@ -45,6 +45,12 @@ app/
 │   ├── repository.py         # PyPika queries; translates MySQL duplicate-key (1062) to a domain error
 │   ├── schemas.py            # Course, PublicCourseResponse, Create/UpdateCourseRequest
 │   └── exceptions.py         # CourseNotFoundError (404), CourseAlreadyExistsError (409)
+├── customers/
+│   ├── router.py             # /customers CRUD (staff read/write, admin delete)
+│   ├── service.py            # CRUD + get_customer_by_email (for booking, no route)
+│   ├── repository.py         # PyPika queries; 1062 on email -> CustomerAlreadyExistsError
+│   ├── schemas.py            # Customer, Create/UpdateCustomerRequest
+│   └── exceptions.py         # CustomerNotFoundError (404), CustomerAlreadyExistsError (409)
 ├── time_off/
 │   ├── router.py             # /time-off CRUD (admin write, staff read)
 │   ├── service.py            # CRUD + get_time_off(start, end), the wrapper appointments will call
@@ -54,10 +60,11 @@ app/
 └── scripts/
     ├── login_test.py         # Manual integration test: insert user → login → rollback
     ├── refresh_test.py       # Manual integration test: login → refresh → reuse detection → rollback
+    ├── customers_test.py     # Manual integration test: customers CRUD, kanji/furigana round trip, 409s → rollback
     └── time_off_test.py      # Manual integration test: time_off CRUD + overlap edges → rollback
 ```
 
-Planned: `customers/`, `appointments/` (see [Domain model and business rules](#domain-model-and-business-rules)). Each feature module follows the same shape as `auth/` and `courses/`: router, service, repository, schemas, and an `exceptions.py` once it has errors raised across files.
+Planned: `appointments/` (see [Domain model and business rules](#domain-model-and-business-rules)). Each feature module follows the same shape as `auth/` and `courses/`: router, service, repository, schemas, and an `exceptions.py` once it has errors raised across files.
 
 ---
 
@@ -233,9 +240,16 @@ Decisions that aren't obvious from reading the code alone — worth knowing befo
 | Role    | Permissions                                           |
 | ------- | ----------------------------------------------------- |
 | `admin` | All permissions (inherits entire `Permission` enum)   |
-| `staff` | `appointments:read`, `customers:read`, `courses:read`, `time_off:read` |
+| `staff` | `appointments:read`, `courses:read`, `customers:read`, `customers:write`, `time_off:read` |
 
-`courses:write` and `time_off:write` (create, update and delete) are admin only. `appointments:write` is public (the booking form) and `appointments:delete` is admin only.
+`courses:write` and `time_off:write` (create, update and delete) are admin only. `customers:write` (manual create and update, e.g. fixing a phone number or a mistyped booking) is shared by admin and staff, while `customers:delete` is admin only. `appointments:write` is public (the booking form) and `appointments:delete` is admin only.
+
+### Customers
+
+- Customers are normally created by the booking flow, but the admin/staff CRUD lets the owner correct details (typos, new phone number). `email` is the unique key: creating or changing to a taken email returns 409, and the column collation is case-insensitive, so `A@x.com` and `a@x.com` collide.
+- `get_customer_by_email` (service) / `get_by_email` (repository) exist for booking and are not exposed as a route. They raise `CustomerNotFoundError` when nothing matches, so booking catches that to decide "create a new customer".
+- Deleting a customer is a hard delete: `appointments.customer_id` is `ON DELETE SET NULL`, so appointments are kept without a customer.
+- There is no pagination or search on `GET /customers` yet, and the phonetic fields are not checked to be kana. Add either when there's a real need.
 
 ### Time off
 
@@ -288,5 +302,7 @@ python -m app.scripts.refresh_test
 ### HTTP-level checks (Bruno)
 
 A Bruno collection covers the API over HTTP: a login request stores the access token in a variable, collection-level Bearer auth applies it to protected requests, and each case is its own request with status assertions.
+
+Cases covered for `time_off` and `customers` follow the same pattern (create, auth, validation, patch, 404s, delete), and `customers` also asserts a kanji/furigana round trip. Staff-role cases need `staff_email` / `staff_password` in the Bruno environment.
 
 Cases covered for `courses`: create (201), duplicate name (409), empty PATCH (422), no-op PATCH (200), name collision on PATCH (409), missing id (404), deactivation visibility (public vs admin list), no token (401) and insufficient permission (403).
