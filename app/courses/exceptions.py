@@ -1,13 +1,3 @@
-from fastapi.responses import JSONResponse
-
-
-async def course_exception_handler(_, exc):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": str(exc)},
-    )
-
-
 class CourseNotFoundError(Exception):
     status_code = 404
 

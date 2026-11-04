@@ -5,21 +5,16 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .auth.exceptions import (
-    InvalidCredentialsError,
-    InvalidRefreshTokenError,
-    auth_exception_handler,
-)
-from .courses.exceptions import (
-    CourseAlreadyExistsError,
-    CourseNotFoundError,
-    course_exception_handler,
-)
+from .auth.exceptions import InvalidCredentialsError, InvalidRefreshTokenError
 from .auth.router import router as auth_router
-from .courses.router import router as courses_router
 from .core.config import settings
 from .core.database import db_service
+from .core.exceptions import domain_exception_handler
 from .core.logging_config import setup_logging
+from .courses.exceptions import CourseAlreadyExistsError, CourseNotFoundError
+from .courses.router import router as courses_router
+from .time_off.exceptions import TimeOffConflictError, TimeOffNotFoundError, TimeOffRangeError
+from .time_off.router import router as time_off_router
 
 setup_logging()
 
@@ -54,15 +49,19 @@ app.add_middleware(
 )
 
 # Exception Handlers
-app.add_exception_handler(InvalidCredentialsError, auth_exception_handler)
-app.add_exception_handler(InvalidRefreshTokenError, auth_exception_handler)
-app.add_exception_handler(CourseNotFoundError, course_exception_handler)
-app.add_exception_handler(CourseAlreadyExistsError, course_exception_handler)
+app.add_exception_handler(InvalidCredentialsError, domain_exception_handler)
+app.add_exception_handler(InvalidRefreshTokenError, domain_exception_handler)
+app.add_exception_handler(CourseNotFoundError, domain_exception_handler)
+app.add_exception_handler(CourseAlreadyExistsError, domain_exception_handler)
+app.add_exception_handler(TimeOffNotFoundError, domain_exception_handler)
+app.add_exception_handler(TimeOffRangeError, domain_exception_handler)
+app.add_exception_handler(TimeOffConflictError, domain_exception_handler)
 
 
 # Routes
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(courses_router, prefix="/courses", tags=["courses"])
+app.include_router(time_off_router, prefix="/time-off", tags=["time-off"])
 
 if __name__ == "__main__":
     uvicorn.run(
