@@ -1,0 +1,24 @@
+info:
+  name: Delete (Staff) (403)
+  type: http
+  seq: 4
+
+http:
+  method: DELETE
+  url: "{{api_url}}/customers/{{customer_id}}"
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 403", function () {
+          expect(res.status).to.equal(403);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

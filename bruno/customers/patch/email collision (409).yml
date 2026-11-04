@@ -1,0 +1,30 @@
+info:
+  name: email collision (409)
+  type: http
+  seq: 5
+
+http:
+  method: PATCH
+  url: "{{api_url}}/customers/{{customer_id}}"
+  body:
+    type: json
+    data: |-
+      {
+        "email": "{{other_customer_email}}"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 409", function () {
+          expect(res.status).to.equal(409);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

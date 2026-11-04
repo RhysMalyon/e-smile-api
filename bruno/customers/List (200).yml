@@ -1,0 +1,28 @@
+info:
+  name: List (200)
+  type: http
+  seq: 6
+
+http:
+  method: GET
+  url: "{{api_url}}/customers"
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 200", function () {
+          expect(res.status).to.equal(200);
+        });
+
+        test("includes the created customer", function () {
+          expect(res.body.some((x) => x.id === bru.getVar("customer_id"))).to.equal(true);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

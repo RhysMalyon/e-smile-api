@@ -1,0 +1,35 @@
+info:
+  name: empty name (422)
+  type: http
+  seq: 4
+
+http:
+  method: POST
+  url: "{{api_url}}/customers"
+  body:
+    type: json
+    data: |-
+      {
+        "email": "v3@example.com",
+        "first_name": "太郎",
+        "last_name": "",
+        "first_name_phonetic": "タロウ",
+        "last_name_phonetic": "ヤマダ",
+        "tel": "090-1234-5678"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 422", function () {
+          expect(res.status).to.equal(422);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

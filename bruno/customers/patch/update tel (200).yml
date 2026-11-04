@@ -1,0 +1,35 @@
+info:
+  name: update tel (200)
+  type: http
+  seq: 4
+
+http:
+  method: PATCH
+  url: "{{api_url}}/customers/{{customer_id}}"
+  body:
+    type: json
+    data: |-
+      {
+        "tel": "080-0000-0000"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 200", function () {
+          expect(res.status).to.equal(200);
+        });
+
+        test("tel changed, name kept", function () {
+          expect(res.body.tel).to.equal("080-0000-0000");
+          expect(res.body.first_name).to.equal("太郎");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

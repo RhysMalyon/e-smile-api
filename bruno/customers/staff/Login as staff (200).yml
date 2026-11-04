@@ -1,0 +1,33 @@
+info:
+  name: Login as staff (200)
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{api_url}}/auth/login"
+  body:
+    type: json
+    data: |-
+      {
+        "email": "{{staff_email}}",
+        "password": "{{staff_password}}"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: after-response
+      code: bru.setVar("access_token", res.body.access_token);
+    - type: tests
+      code: |-
+        test("status is 200", function () {
+          expect(res.status).to.equal(200);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

@@ -1,0 +1,44 @@
+info:
+  name: Create (201)
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{api_url}}/customers"
+  body:
+    type: json
+    data: |-
+      {
+        "email": "taro.{{$timestamp}}@example.com",
+        "first_name": "太郎",
+        "last_name": "山田",
+        "first_name_phonetic": "タロウ",
+        "last_name_phonetic": "ヤマダ",
+        "tel": "090-1234-5678"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: after-response
+      code: bru.setVar("customer_id", res.body.id); bru.setVar("customer_email", res.body.email);
+    - type: tests
+      code: |-
+        test("status is 201", function () {
+          expect(res.status).to.equal(201);
+        });
+
+        test("kanji and furigana round-trip", function () {
+          expect(res.body.first_name).to.equal("太郎");
+          expect(res.body.last_name).to.equal("山田");
+          expect(res.body.first_name_phonetic).to.equal("タロウ");
+          expect(res.body.last_name_phonetic).to.equal("ヤマダ");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

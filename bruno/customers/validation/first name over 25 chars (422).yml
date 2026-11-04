@@ -1,0 +1,35 @@
+info:
+  name: first name over 25 chars (422)
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: "{{api_url}}/customers"
+  body:
+    type: json
+    data: |-
+      {
+        "email": "v1@example.com",
+        "first_name": "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "last_name": "山田",
+        "first_name_phonetic": "タロウ",
+        "last_name_phonetic": "ヤマダ",
+        "tel": "090-1234-5678"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 422", function () {
+          expect(res.status).to.equal(422);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
