@@ -1,0 +1,27 @@
+info:
+  name: Month (200)
+  type: http
+  seq: 1
+
+http:
+  method: GET
+  url: "{{api_url}}/closed-dates?start=2026-11-01&end=2026-11-30"
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 200", function () {
+          expect(res.status).to.equal(200);
+        });
+
+        test("Thursdays, Sundays and holidays, sorted", function () {
+          expect(res.body).to.deep.equal(["2026-11-01", "2026-11-03", "2026-11-05", "2026-11-08", "2026-11-12", "2026-11-15", "2026-11-19", "2026-11-22", "2026-11-23", "2026-11-26", "2026-11-29"]);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

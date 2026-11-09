@@ -1,0 +1,23 @@
+info:
+  name: bad date format (422)
+  type: http
+  seq: 8
+
+http:
+  method: GET
+  url: "{{api_url}}/closed-dates?start=01-01-2027&end=02-01-2027"
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 422", function () {
+          expect(res.status).to.equal(422);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
