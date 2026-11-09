@@ -1,0 +1,36 @@
+info:
+  name: Time off over appointment (409)
+  type: http
+  seq: 8
+
+http:
+  method: POST
+  url: "{{api_url}}/time-off"
+  body:
+    type: json
+    data: |-
+      {
+        "start_at": "2031-08-01T09:00:00",
+        "end_at": "2031-08-01T12:00:00"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("status is 409", function () {
+          expect(res.status).to.equal(409);
+        });
+
+        test("lists the conflicting dates", function () {
+          expect(res.body.detail).to.contain("2031-08-01T10:00:00");
+          expect(res.body.detail).to.contain("2031-08-01T11:00:00");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

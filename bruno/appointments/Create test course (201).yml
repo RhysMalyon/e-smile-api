@@ -1,0 +1,35 @@
+info:
+  name: Create test course (201)
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{api_url}}/courses"
+  body:
+    type: json
+    data: |-
+      {
+        "name": "Booking Test {{$timestamp}}",
+        "length": 30,
+        "price": 5000,
+        "is_active": true
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: after-response
+      code: bru.setVar("appt_course_id", res.body.id);
+    - type: tests
+      code: |-
+        test("status is 201", function () {
+          expect(res.status).to.equal(201);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

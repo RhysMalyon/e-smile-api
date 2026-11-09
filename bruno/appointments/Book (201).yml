@@ -1,0 +1,47 @@
+info:
+  name: Book (201)
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: "{{api_url}}/appointments"
+  body:
+    type: json
+    data: |-
+      {
+        "course_id": {{appt_course_id}},
+        "date": "2031-08-01 10:00:00",
+        "customer": {
+          "email": "bruno-booking@example.com",
+          "first_name": "太郎",
+          "last_name": "山田",
+          "first_name_phonetic": "タロウ",
+          "last_name_phonetic": "ヤマダ",
+          "tel": "090-1234-5678"
+        }
+      }
+
+runtime:
+  scripts:
+    - type: after-response
+      code: bru.setVar("appointment_id", res.body.id);
+    - type: tests
+      code: |-
+        test("status is 201", function () {
+          expect(res.status).to.equal(201);
+        });
+
+        test("snapshot price, no admin fields", function () {
+          expect(res.body.price_at_booking).to.equal(5000);
+          expect(res.body.date).to.equal("2031-08-01T10:00:00");
+          expect(res.body).to.not.have.property("admin_notes");
+          expect(res.body).to.not.have.property("customer_id");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
