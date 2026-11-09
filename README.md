@@ -1,6 +1,6 @@
 # e-smile API
 
-Backend API for the e-smile teeth-whitening business: staff authentication, an admin back-office, and the public booking flow. Implemented so far: `auth`, `courses`, `time_off` and `customers`. In progress: `appointments` (including availability).
+Backend API for the e-smile teeth-whitening business: staff authentication, an admin back-office, and the public booking flow. Implemented so far: `auth`, `courses`, `time_off` and `customers`. In progress: the closed-dates endpoint for the date picker (`appointments` itself, including booking, admin routes and `/availability`, is done).
 
 ## Tech Stack
 
@@ -25,6 +25,7 @@ app/
 ├── core/
 │   ├── config.py             # Settings hierarchy (pydantic-settings)
 │   ├── exceptions.py         # domain_exception_handler — the one shared handler for all domain exceptions
+│   ├── types.py              # HourAlignedDatetime — shared Pydantic type (naive, on the hour)
 │   ├── database.py           # DatabaseService — aiomysql pool singleton + ContextVar transaction guard
 │   ├── dependencies.py       # get_transaction() — DI-based connection/transaction yield
 │   ├── logging_config.py     # Structured logging unified with Uvicorn; correlation_id ContextVar
@@ -51,6 +52,13 @@ app/
 │   ├── repository.py         # PyPika queries; 1062 on email -> CustomerAlreadyExistsError
 │   ├── schemas.py            # Customer, Create/UpdateCustomerRequest
 │   └── exceptions.py         # CustomerNotFoundError (404), CustomerAlreadyExistsError (409)
+├── appointments/
+│   ├── router.py             # POST /appointments (public), GET/DELETE admin routes; second router for public GET /availability
+│   ├── service.py            # book_appointment(), get_availability(), get_appointments_in_range()
+│   ├── repository.py         # PyPika queries; 1062 on `date` -> SlotUnavailableError
+│   ├── schemas.py            # Appointment, PublicAppointmentResponse, CreateAppointmentRequest
+│   ├── scheduling.py         # Business-hours config: slot hours, lunch, closed weekdays, Japanese holidays
+│   └── exceptions.py         # AppointmentNotFoundError (404), InvalidSlotError (422), SlotUnavailableError (409), InvalidDateRangeError (422)
 ├── time_off/
 │   ├── router.py             # /time-off CRUD (admin write, staff read)
 │   ├── service.py            # CRUD + get_time_off(start, end), the wrapper appointments will call
@@ -60,6 +68,7 @@ app/
 └── scripts/
     ├── login_test.py         # Manual integration test: insert user → login → rollback
     ├── refresh_test.py       # Manual integration test: login → refresh → reuse detection → rollback
+    ├── appointments_test.py  # Manual integration test: booking rules, price snapshot, tel note, time-off conflicts → rollback
     ├── customers_test.py     # Manual integration test: customers CRUD, kanji/furigana round trip, 409s → rollback
     └── time_off_test.py      # Manual integration test: time_off CRUD + overlap edges → rollback
 ```
@@ -171,6 +180,7 @@ PyPika==0.51.1
 bcrypt==5.0.0
 PyJWT==2.13.0
 email-validator==2.3.0
+holidays==0.108
 ```
 
 Regenerate with `pip freeze > requirements.txt` after adding or upgrading packages.
@@ -188,8 +198,13 @@ Decisions that aren't obvious from reading the code alone — worth knowing befo
 - `courses.length` is display/admin information only and is deliberately not snapshotted. `appointments.price_at_booking` is snapshotted so historical prices survive course edits.
 - Courses are never hard-deleted (`is_active` soft delete); the `appointments.course_id` FK is `ON DELETE RESTRICT`.
 - Customers have no login. `customers.email` is the sole unique identifier; `tel` is deliberately not unique. On booking, a customer is looked up by email only. A match is reused unchanged, and a differing `tel` is noted in `appointments.admin_notes` instead of overwriting. `appointments.customer_id` is nullable with `ON DELETE SET NULL` so a customer can be erased while keeping the appointment record.
-- Business hours, lunch, weekly closed days (Thursday/Sunday) and national holidays are server-side config, not DB tables.
-- Availability (planned): a public `GET /availability` in `appointments/router.py` (a second `APIRouter`), merging `appointments.date` and `time_off` ranges in Python into `{date: [ISO hour strings]}` for a requested range. `appointments` reads time-off through `time_off/service.py`, not its repository.
+- Business hours, lunch, weekly closed days (Thursday/Sunday) and national holidays are server-side config, not DB tables, in `appointments/scheduling.py`:
+  - Slots start at 10, 11, 13, 14, 15 and 16 (16:00 is the last slot and runs to 17:00). Only 12:00 is lunch. These were taken from the old Vue date picker, whose "11:30–12:30" lunch check only ever blocked the 12:00 slot on hourly steps.
+  - National holidays come from the [`holidays`](https://pypi.org/project/holidays/) package (`country_holidays("JP")`), not a hand-maintained list. It was checked against the old Vue list for Oct 2025 – Nov 2026 with an exact match, including substitute and citizens' holidays, and it covers future years automatically.
+  - `weekday()` is Monday=0, so Thursday=3 and Sunday=6 (JavaScript's `getDay()` uses Thursday=4, Sunday=0).
+  - "Now" for the future-slot check is shop-local time (`Asia/Tokyo`) via `shop_now()`, not the server's clock.
+- Same-day booking is allowed online, as long as the slot is in the future.
+- Availability: a public `GET /availability` in `appointments/router.py` (a second `APIRouter`, mounted at `/availability` in `main.py`), merging `appointments.date` and `time_off` ranges in Python. `appointments` reads time-off through `time_off/service.py`, not its repository. See [Availability](#availability).
 
 ### Layer responsibilities and conventions
 
@@ -251,12 +266,37 @@ Decisions that aren't obvious from reading the code alone — worth knowing befo
 - Deleting a customer is a hard delete: `appointments.customer_id` is `ON DELETE SET NULL`, so appointments are kept without a customer.
 - There is no pagination or search on `GET /customers` yet, and the phonetic fields are not checked to be kana. Add either when there's a real need.
 
+### Booking (`POST /appointments`)
+
+- Public (no permission dependency). Body: `{course_id, date, customer: {...}}`, where `customer` is the same shape as `CreateCustomerRequest`. `date` accepts `2026-08-01T10:00:00` or `2026-08-01 10:00:00`, must be naive and on the hour. The response (`PublicAppointmentResponse`) deliberately omits `customer_id`, `admin_notes` and timestamps.
+- Checks run in this order: the slot is bookable per `scheduling.py` (hours, lunch, closed day) → it is in the future by shop time → the course exists and is active → no time off covers the hour → customer resolution → insert. Rejections: `InvalidSlotError` (422) for a time that can never be booked, `CourseNotFoundError` (404) for a missing **or inactive** course (same answer, so inactive ones aren't discoverable), `SlotUnavailableError` (409) for a taken slot.
+- A slot taken by another appointment and a slot covered by time off return the **same** 409 and message, so the public form doesn't reveal the reason.
+- Double booking is prevented by the `UNIQUE` index on `date`, not by a check-then-insert, so concurrent requests can't both succeed; the repository turns the 1062 into `SlotUnavailableError`.
+- Everything happens in one transaction: if the insert fails, a customer created earlier in the same request is rolled back too.
+- Existing customer (matched by email): reused unchanged. If the submitted `tel` differs, a note is written to `appointments.admin_notes`. Phone numbers are compared by digits only, so `090-1234-5678` and `09012345678` do not raise a note.
+- `price_at_booking` is copied from `courses.price` at booking time; later price edits don't change it.
+- Not done yet: rate limiting or spam protection on this public endpoint, and a retry if two requests create the same new customer email at the same instant (the second would get a 409).
+
+### Availability (`GET /availability?start=YYYY-MM-DD&end=YYYY-MM-DD`)
+
+- Public. Returns `{"2026-08-01": ["2026-08-01T10:00:00", ...], ...}`: the blocked hours per day, ISO strings with a `T`.
+- **`end` is inclusive**, and **every date in the range is a key**, with `[]` when nothing is blocked, so the front end can tell "nothing blocked" from "not fetched yet".
+- The range is capped at **93 days** (`MAX_AVAILABILITY_DAYS`), because the endpoint is public. `end < start` or too long returns 422 (`InvalidDateRangeError`); missing or malformed params return FastAPI's 422.
+- The service fetches appointments in the range and the time-off rows that strictly overlap it, then expands each time-off block hour by hour **only inside the requested range** (so a very long block stays cheap; `end_at` itself is excluded).
+- Blocked hours are bookings and time off only. Opening hours, lunch, closed weekdays and holidays are rules the front end already knows; a closed-dates list for `disabled-date` is still to be built.
+- It reveals which hours are blocked, never who booked them or why (appointments and time off look identical).
+
+### Appointments admin routes
+
+- `GET /appointments` and `GET /appointments/{id}` need `appointments:read` (admin and staff) and return the full `Appointment` row (including `customer_id` and `admin_notes`, where the tel-mismatch note lives). `DELETE /appointments/{id}` needs `appointments:delete` (admin only) and is a hard delete that frees the slot.
+- The list is not paginated or filtered yet, and returns ids rather than names. The front end joins with `/customers` and `/courses/admin`. Add filters or pagination when the volume calls for it.
+
 ### Time off
 
 - `time_off` datetimes are **naive wall-clock times** in the shop's local time. The API rejects timezone-aware input (`Z`, `+09:00`), because the `DATETIME` columns carry no zone and silently shifting values would move a block by hours. The pool's UTC session time zone only affects `TIMESTAMP` columns (`created_at`/`updated_at`).
 - `HourAlignedDatetime` (in `time_off/schemas.py`) and the `start_at < end_at` validators return clean 422s before the DB `CHECK`s would fail. `PATCH` may send only one side of the range, so the service merges it with the stored row and raises `TimeOffRangeError` (422) if the result is inverted.
 - `get_time_off(conn, start, end)` in `time_off/service.py` returns blocks that strictly overlap `[start, end)` (`start_at < end AND end_at > start`; touching edges don't count). This is the entry point for `appointments`.
-- Create/update call `_ensure_no_appointment_conflicts`, currently a **no-op stub**. When `appointments` exists it must raise `TimeOffConflictError` (409) listing the conflicting dates.
+- Create/update call `_ensure_no_appointment_conflicts`, which asks `appointments.service.get_appointments_in_range` and raises `TimeOffConflictError` (409) listing the conflicting dates. The import is **inside the function** on purpose: `appointments.service` imports `time_off.service`, so a module-level import in both directions would be circular. An appointment on the edge of the block (`end_at` equals its start) is not a conflict.
 
 ### `is_production` controls cookie security, not `debug`
 
@@ -302,6 +342,8 @@ python -m app.scripts.refresh_test
 ### HTTP-level checks (Bruno)
 
 A Bruno collection covers the API over HTTP: a login request stores the access token in a variable, collection-level Bearer auth applies it to protected requests, and each case is its own request with status assertions.
+
+The `appointments` folder runs a full flow on a fixed future date and cleans up after itself (it deletes its appointments, time off and customer; the test course can't be deleted, so it is deactivated). If a run aborts midway, delete the leftovers by hand before re-running, or the first booking will return 409.
 
 Cases covered for `time_off` and `customers` follow the same pattern (create, auth, validation, patch, 404s, delete), and `customers` also asserts a kanji/furigana round trip. Staff-role cases need `staff_email` / `staff_password` in the Bruno environment.
 

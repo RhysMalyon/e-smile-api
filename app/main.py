@@ -5,6 +5,14 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .appointments.exceptions import (
+    AppointmentNotFoundError,
+    InvalidDateRangeError,
+    InvalidSlotError,
+    SlotUnavailableError,
+)
+from .appointments.router import availability_router
+from .appointments.router import router as appointments_router
 from .auth.exceptions import InvalidCredentialsError, InvalidRefreshTokenError
 from .auth.router import router as auth_router
 from .core.config import settings
@@ -55,6 +63,10 @@ app.add_exception_handler(InvalidCredentialsError, domain_exception_handler)
 app.add_exception_handler(InvalidRefreshTokenError, domain_exception_handler)
 app.add_exception_handler(CourseNotFoundError, domain_exception_handler)
 app.add_exception_handler(CourseAlreadyExistsError, domain_exception_handler)
+app.add_exception_handler(AppointmentNotFoundError, domain_exception_handler)
+app.add_exception_handler(InvalidSlotError, domain_exception_handler)
+app.add_exception_handler(InvalidDateRangeError, domain_exception_handler)
+app.add_exception_handler(SlotUnavailableError, domain_exception_handler)
 app.add_exception_handler(CustomerNotFoundError, domain_exception_handler)
 app.add_exception_handler(CustomerAlreadyExistsError, domain_exception_handler)
 app.add_exception_handler(TimeOffNotFoundError, domain_exception_handler)
@@ -65,6 +77,8 @@ app.add_exception_handler(TimeOffConflictError, domain_exception_handler)
 # Routes
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(courses_router, prefix="/courses", tags=["courses"])
+app.include_router(appointments_router, prefix="/appointments", tags=["appointments"])
+app.include_router(availability_router, prefix="/availability", tags=["availability"])
 app.include_router(customers_router, prefix="/customers", tags=["customers"])
 app.include_router(time_off_router, prefix="/time-off", tags=["time-off"])
 

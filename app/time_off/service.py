@@ -4,7 +4,7 @@ from typing import List
 
 from aiomysql import Connection
 
-from app.time_off.exceptions import TimeOffRangeError
+from app.time_off.exceptions import TimeOffConflictError, TimeOffRangeError
 from app.time_off.repository import (
     create,
     delete_by_id,
@@ -21,10 +21,15 @@ logger = logging.getLogger(__name__)
 async def _ensure_no_appointment_conflicts(
     conn: Connection, start_at: datetime, end_at: datetime
 ) -> None:
-    # TODO(appointments): once the appointments feature exists, fetch appointments with
-    # start_at <= date < end_at via appointments/service.py and, if any, raise
-    # TimeOffConflictError listing the conflicting dates. Deliberately a no-op until then.
-    return None
+    # Imported here, not at module level: appointments.service imports time_off.service, so a
+    # top-level import in both directions would be circular.
+    from app.appointments.service import get_appointments_in_range
+
+    conflicts = await get_appointments_in_range(conn, start_at, end_at)
+
+    if conflicts:
+        dates = ", ".join(appointment.date.isoformat() for appointment in conflicts)
+        raise TimeOffConflictError(f"Time off overlaps existing appointments: {dates}")
 
 
 async def create_time_off(conn: Connection, request: CreateTimeOffRequest) -> TimeOff:
