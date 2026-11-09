@@ -1,6 +1,6 @@
 # e-smile API
 
-Backend API for the e-smile teeth-whitening business: staff authentication, an admin back-office, and the public booking flow. Implemented so far: `auth`, `courses`, `time_off` and `customers`. In progress: the closed-dates endpoint for the date picker (`appointments` itself, including booking, admin routes and `/availability`, is done).
+Backend API for the e-smile teeth-whitening business: staff authentication, an admin back-office, and the public booking flow. Implemented so far: `auth`, `courses`, `time_off` and `customers`. `appointments` is done, including booking, admin routes, `/availability` and `/closed-dates`. Next: public-booking hardening and pytest.
 
 ## Tech Stack
 
@@ -53,7 +53,7 @@ app/
 │   ├── schemas.py            # Customer, Create/UpdateCustomerRequest
 │   └── exceptions.py         # CustomerNotFoundError (404), CustomerAlreadyExistsError (409)
 ├── appointments/
-│   ├── router.py             # POST /appointments (public), GET/DELETE admin routes; second router for public GET /availability
+│   ├── router.py             # POST /appointments (public), GET/DELETE admin routes; extra routers for public GET /availability and /closed-dates
 │   ├── service.py            # book_appointment(), get_availability(), get_appointments_in_range()
 │   ├── repository.py         # PyPika queries; 1062 on `date` -> SlotUnavailableError
 │   ├── schemas.py            # Appointment, PublicAppointmentResponse, CreateAppointmentRequest
@@ -283,8 +283,16 @@ Decisions that aren't obvious from reading the code alone — worth knowing befo
 - **`end` is inclusive**, and **every date in the range is a key**, with `[]` when nothing is blocked, so the front end can tell "nothing blocked" from "not fetched yet".
 - The range is capped at **93 days** (`MAX_AVAILABILITY_DAYS`), because the endpoint is public. `end < start` or too long returns 422 (`InvalidDateRangeError`); missing or malformed params return FastAPI's 422.
 - The service fetches appointments in the range and the time-off rows that strictly overlap it, then expands each time-off block hour by hour **only inside the requested range** (so a very long block stays cheap; `end_at` itself is excluded).
-- Blocked hours are bookings and time off only. Opening hours, lunch, closed weekdays and holidays are rules the front end already knows; a closed-dates list for `disabled-date` is still to be built.
+- Blocked hours are bookings and time off only. Opening hours, lunch, closed weekdays and holidays are rules the front end already knows; the closed days come from [`/closed-dates`](#closed-dates).
 - It reveals which hours are blocked, never who booked them or why (appointments and time off look identical).
+
+### Closed dates (`GET /closed-dates?start=YYYY-MM-DD&end=YYYY-MM-DD`)
+
+- Public. Returns a sorted list of ISO dates, e.g. `["2026-11-01", "2026-11-03", ...]`: the days the shop is closed all day, meaning weekly closed days (Thursday, Sunday) and Japanese national holidays. This feeds the date picker's `disabled-date`.
+- A day that is merely fully booked or covered by time off is **not** here: it stays selectable with every hour disabled (via `/availability` and `disabled-time`). This split keeps *rules* (this endpoint) separate from *bookings* (availability).
+- Same range semantics as availability (`end` inclusive, `end < start` returns 422), but capped at **366 days** (`MAX_CLOSED_DATES_DAYS`) so the front end can fetch a year at once and cache it. It's cheap because nothing touches the database.
+- Deliberately has **no** `get_transaction` dependency: it is a pure computation from `scheduling.py`, so acquiring a pooled DB connection would be waste. This is the one route that departs from the "all routes use `get_transaction`" convention.
+- The date picker no longer needs a hardcoded holiday list. Opening hours, lunch hours and the 12:00 lunch slot are still known only to the front end.
 
 ### Appointments admin routes
 

@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from app.appointments.exceptions import (
     AppointmentNotFoundError,
@@ -17,6 +17,7 @@ from app.appointments.service import (
     get_appointments,
     get_appointments_in_range,
     get_availability,
+    get_closed_dates,
 )
 from app.core.database import db_service
 from app.courses.exceptions import CourseNotFoundError
@@ -225,6 +226,33 @@ async def main():
             ).id == stored.customer_id
             rebooked = await book_appointment(conn, booking(14, course.id))
             assert rebooked.date == day.replace(hour=14)
+
+            # --- Closed dates: Thursdays, Sundays and national holidays only.
+            november = await get_closed_dates(date(2026, 11, 1), date(2026, 11, 30))
+            assert november == [
+                "2026-11-01",  # Sun
+                "2026-11-03",  # Culture Day (Tue)
+                "2026-11-05",  # Thu
+                "2026-11-08",  # Sun
+                "2026-11-12",  # Thu
+                "2026-11-15",  # Sun
+                "2026-11-19",  # Thu
+                "2026-11-22",  # Sun
+                "2026-11-23",  # Labour Thanksgiving Day (Mon)
+                "2026-11-26",  # Thu
+                "2026-11-29",  # Sun
+            ], november
+            assert await get_closed_dates(date(2027, 1, 1), date(2027, 1, 1)) == ["2027-01-01"]
+            assert await get_closed_dates(date(2026, 11, 6), date(2026, 11, 6)) == []  # open Friday
+            year_start = date(2027, 1, 1)
+            assert len(await get_closed_dates(year_start, year_start + timedelta(days=365))) > 100
+            await expect_error(
+                InvalidDateRangeError, get_closed_dates(date(2027, 1, 2), date(2027, 1, 1))
+            )
+            await expect_error(
+                InvalidDateRangeError,
+                get_closed_dates(year_start, year_start + timedelta(days=366)),
+            )
 
             print("All appointments checks passed.")
             raise RollbackTestTransaction()

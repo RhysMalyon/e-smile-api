@@ -17,7 +17,7 @@ from app.appointments.repository import (
     get_by_id,
     get_list,
 )
-from app.appointments.scheduling import is_bookable_slot, shop_now
+from app.appointments.scheduling import is_bookable_slot, is_closed_day, shop_now
 from app.appointments.schemas import (
     Appointment,
     CreateAppointmentRequest,
@@ -110,8 +110,17 @@ async def delete_appointment(conn: Connection, id: int) -> None:
     await delete_by_id(conn, id)
 
 
-# Public endpoint, so cap how much one request can ask for.
+# Public endpoints, so cap how much one request can ask for.
 MAX_AVAILABILITY_DAYS = 93
+MAX_CLOSED_DATES_DAYS = 366  # a year, so the front end can fetch it once; no DB involved
+
+
+def _validate_range(start: date, end: date, max_days: int) -> None:
+    if end < start:
+        raise InvalidDateRangeError("end must not be before start.")
+
+    if (end - start).days + 1 > max_days:
+        raise InvalidDateRangeError(f"The range cannot be longer than {max_days} days.")
 
 
 async def get_availability(conn: Connection, start: date, end: date) -> dict[str, list[str]]:
@@ -120,13 +129,7 @@ async def get_availability(conn: Connection, start: date, end: date) -> dict[str
     Merges appointments and time off. Every requested date is a key, with [] when nothing is
     blocked. Closed days, lunch and opening hours are not included; they are rules, not bookings.
     """
-    if end < start:
-        raise InvalidDateRangeError("end must not be before start.")
-
-    if (end - start).days + 1 > MAX_AVAILABILITY_DAYS:
-        raise InvalidDateRangeError(
-            f"The range cannot be longer than {MAX_AVAILABILITY_DAYS} days."
-        )
+    _validate_range(start, end, MAX_AVAILABILITY_DAYS)
 
     range_start = datetime.combine(start, time.min)
     range_end = datetime.combine(end + timedelta(days=1), time.min)
@@ -152,3 +155,15 @@ async def get_availability(conn: Connection, start: date, end: date) -> dict[str
         )
 
     return availability
+
+
+async def get_closed_dates(start: date, end: date) -> list[str]:
+    """Dates in start..end (inclusive) the shop is closed all day: weekly closed days and national
+    holidays. Fully booked days and time off are deliberately not here; those stay selectable
+    with their hours disabled (see get_availability).
+    """
+    _validate_range(start, end, MAX_CLOSED_DATES_DAYS)
+
+    days = (start + timedelta(days=offset) for offset in range((end - start).days + 1))
+
+    return [day.isoformat() for day in days if is_closed_day(day)]

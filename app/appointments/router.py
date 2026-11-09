@@ -15,6 +15,7 @@ from app.appointments.service import delete_appointment as delete_appointment_se
 from app.appointments.service import get_appointment_by_id as get_appointment_by_id_service
 from app.appointments.service import get_appointments as get_appointments_service
 from app.appointments.service import get_availability as get_availability_service
+from app.appointments.service import get_closed_dates as get_closed_dates_service
 from app.auth.dependencies import require_permission
 from app.core.dependencies import get_transaction
 from app.core.permissions import Permission
@@ -22,6 +23,7 @@ from app.core.permissions import Permission
 router = APIRouter()
 # Separate router so main.py can mount it at /availability rather than /appointments/availability.
 availability_router = APIRouter()
+closed_dates_router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
@@ -64,3 +66,9 @@ async def delete_appointment(appointment_id: int, conn: Connection = Depends(get
 @availability_router.get("", response_model=dict[str, list[str]])
 async def get_availability(start: date, end: date, conn: Connection = Depends(get_transaction)):
     return await get_availability_service(conn, start, end)
+
+
+# Public. Pure computation from scheduling.py, so it deliberately takes no DB connection.
+@closed_dates_router.get("", response_model=list[str])
+async def get_closed_dates(start: date, end: date):
+    return await get_closed_dates_service(start, end)
